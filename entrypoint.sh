@@ -26,7 +26,7 @@ assert_non_empty() {
 assert_non_empty inputs.repository "$REPOSITORY"
 assert_non_empty inputs.gpg_private_key "$GPG_PRIVATE_KEY"
 assert_non_empty inputs.gpg_passphrase "$GPG_PASSPHRASE"
-assert_non_empty inputs.tarball "$TARBALL"
+# assert_non_empty inputs.tarball "$TARBALL"
 assert_non_empty inputs.deb_email "$DEB_EMAIL"
 assert_non_empty inputs.deb_fullname "$DEB_FULLNAME"
 
@@ -70,42 +70,62 @@ if [[ -n "$INPUT_EXTRA_SERIES" ]]; then
     SERIES="$INPUT_EXTRA_SERIES $SERIES"
 fi
 
-mkdir -p /tmp/workspace/source
-cp $TARBALL /tmp/workspace/source
-cp -r $DEBIAN_DIR /tmp/workspace/debian
+rm -rf /tmp/workspace
+mkdir -p /tmp/workspace/{blueprint,build}
+
+if [[ -s "${TARBALL}" ]]; then
+    mkdir -p /tmp/workspace/blueprint/source
+    cp -fv $TARBALL /tmp/workspace/blueprint/source
+    cd /tmp/workspace/blueprint/source
+    tar -xf *
+fi
+
+# Extract the package name from the original debian changelog
+cd ${DEBIAN_DIR}/..
+PACKAGE_NAME=$(dpkg-parsechangelog --show-field Source)
+PACKAGE_VERSION=$(dpkg-parsechangelog --show-field Version | cut -d- -f1)
+if [[ -n "${PACKAGE_NAME}" && -n "${PACKAGE_VERSION}" ]]; then
+    mkdir -p "/tmp/workspace/blueprint/${PACKAGE_NAME}-${PACKAGE_VERSION}"
+    rsync -a --delete-after --exclude=changelog ${DEBIAN_DIR}/ "/tmp/workspace/blueprint/${PACKAGE_NAME}-${PACKAGE_VERSION}/debian/"
+else
+    echo "No package name and version could be extracted from changelog." >&2
+    exit 1
+fi
+
+cd "/tmp/workspace/blueprint/${PACKAGE_NAME}-${PACKAGE_VERSION}"
+
+if [[ -s "${TARBALL}" ]]; then
+    echo "Making non-native package..."
+    debmake
+else
+    echo "Making native package..."
+    debmake -n
+fi
+
+# Install build dependencies
+mk-build-deps --install --remove --tool='apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends --yes' debian/control
+
+rm -rf debian/changelog
+
+changes="New upstream release"
+
 
 for s in $SERIES; do
     ubuntu_version=$(distro-info --series $s -r | cut -d' ' -f1)
 
     echo "::group::Building deb for: $ubuntu_version ($s)"
     
-    cp -r /tmp/workspace /tmp/$s && cd /tmp/$s/source
-    tar -xf * && cd */
+    rsync -a /tmp/workspace/blueprint/ /tmp/workspace/build/$s/
+    cd "/tmp/workspace/build/$s/${PACKAGE_NAME}-${PACKAGE_VERSION}"
 
-    echo "Making non-native package..."
-    debmake
-
-    cp -r /tmp/$s/debian/* debian/
-
-    # Extract the package name from the debian changelog
-    package=$(dpkg-parsechangelog --show-field Source)
-    pkg_version=$(dpkg-parsechangelog --show-field Version | cut -d- -f1)
-    changes="New upstream release"
-
-    # Create the debian changelog
-    rm -rf debian/changelog
-    dch --create --distribution $s --package $package --newversion $pkg_version-ppa$REVISION~ubuntu$ubuntu_version "$changes"
-
-    # Install build dependencies
-    mk-build-deps --install --remove --tool='apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends --yes' debian/control
+    # Create new debian changelog
+    dch --create --distribution $s --package $PACKAGE_NAME --newversion $PACKAGE_VERSION-ppa$REVISION~ubuntu$ubuntu_version "$changes"
 
     debuild -S -sa \
         -k"$GPG_KEY_ID" \
         -p"gpg --batch --passphrase "$GPG_PASSPHRASE" --pinentry-mode loopback"
 
     dput ppa:$REPOSITORY ../*.changes
-
-    echo "Uploaded $package to $REPOSITORY"
 
     echo "::endgroup::"
 done

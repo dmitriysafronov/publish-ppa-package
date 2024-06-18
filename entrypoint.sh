@@ -76,10 +76,13 @@ if [[ -n "$INPUT_EXTRA_SERIES" ]]; then
     SERIES="$INPUT_EXTRA_SERIES $SERIES"
 fi
 
+echo "Supported series: ${SERIES}"
+
 rm -rf /tmp/workspace
 mkdir -p /tmp/workspace/{blueprint,build}
 
 if [[ -s "${TARBALL}" ]]; then
+    echo "Using source tarball: ${TARBALL}"
     mkdir -p /tmp/workspace/blueprint/source
     cp -fv $TARBALL /tmp/workspace/blueprint/source
     cd /tmp/workspace/blueprint/source
@@ -91,6 +94,7 @@ cd ${DEBIAN_DIR}/..
 PACKAGE_NAME=$(dpkg-parsechangelog --show-field Source)
 PACKAGE_VERSION=$(dpkg-parsechangelog --show-field Version | cut -d- -f1)
 if [[ -n "${PACKAGE_NAME}" && -n "${PACKAGE_VERSION}" ]]; then
+    echo "Package name: ${PACKAGE_NAME}, package version:${PACKAGE_VERSION}"
     mkdir -p "/tmp/workspace/blueprint/${PACKAGE_NAME}-${PACKAGE_VERSION}"
     rsync -a --delete-after --exclude=changelog ${DEBIAN_DIR}/ "/tmp/workspace/blueprint/${PACKAGE_NAME}-${PACKAGE_VERSION}/debian/"
 else

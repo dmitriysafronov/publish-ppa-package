@@ -33,9 +33,10 @@ assert_non_empty inputs.deb_fullname "$DEB_FULLNAME"
 export DEBEMAIL="$DEB_EMAIL"
 export DEBFULLNAME="$DEB_FULLNAME"
 
-echo "::group::Importing GPG private key..."
-echo "Importing GPG private key..."
 
+echo "::group::Importing GPG private key..."
+
+echo "Importing GPG private key..."
 GPG_KEY_ID=$(echo "$GPG_PRIVATE_KEY" | gpg --import-options show-only --import | sed -n '2s/^\s*//p')
 echo $GPG_KEY_ID
 echo "$GPG_PRIVATE_KEY" | gpg --batch --passphrase "$GPG_PASSPHRASE" --import
@@ -47,8 +48,9 @@ if [[ $(gpg --list-keys | grep expired) ]]; then
 fi
 
 echo "::endgroup::"
-
+###################
 echo "::group::Adding PPA..."
+
 echo "Adding PPA: $REPOSITORY"
 add-apt-repository -y ppa:$REPOSITORY
 # Add extra PPA if it's been set
@@ -59,7 +61,11 @@ if [[ -n "$EXTRA_PPA" ]]; then
     done
 fi
 apt-get update
+
+
 echo "::endgroup::"
+###################
+echo "::group::Configure parameters..."
 
 if [[ -z "$SERIES" ]]; then
     SERIES=$(distro-info --supported)
@@ -92,6 +98,10 @@ else
     exit 1
 fi
 
+echo "::endgroup::"
+###################
+echo "::group::Preparing package..."
+
 cd "/tmp/workspace/blueprint/${PACKAGE_NAME}-${PACKAGE_VERSION}"
 
 if [[ -s "${TARBALL}" ]]; then
@@ -109,11 +119,13 @@ rm -rf debian/changelog
 
 changes="New upstream release"
 
+echo "::endgroup::"
+###################
 
 for s in $SERIES; do
     ubuntu_version=$(distro-info --series $s -r | cut -d' ' -f1)
 
-    echo "::group::Building deb for: $ubuntu_version ($s)"
+    echo "::group::Building package for: $ubuntu_version ($s)"
     
     rsync -a /tmp/workspace/blueprint/ /tmp/workspace/build/$s/
     cd "/tmp/workspace/build/$s/${PACKAGE_NAME}-${PACKAGE_VERSION}"
